@@ -117,7 +117,12 @@ class Controller:
             return
         elapsed = time.perf_counter() - t0
         secs = len(audio) / config.SAMPLE_RATE
-        log.info("%.1fs audio -> %.2fs: %r", secs, elapsed, text)
+        rms = float(np.sqrt(np.mean(audio * audio)))
+        peak = float(np.max(np.abs(audio)))
+        log.info("%.1fs audio (rms %.4f, peak %.3f, mic %s) -> %.2fs: %r", secs, rms, peak,
+                 self.recorder.device or "default", elapsed, text)
+        if not text:
+            _save_empty_clip(audio)
         self.call_main(self.overlay.hide, bool(text))
         if text:
             self.last_text = text
@@ -127,4 +132,32 @@ class Controller:
                 log.exception("Paste failed")
             short = text if len(text) <= 50 else text[:47] + "…"
             self.call_main(self.ui.set_last, short)
-        self.call_main(self.ui.set_status, "idle", f"Ready · last: {secs:.1f}s in {elapsed:.2f}s")
+        if text:
+            self.call_main(self.ui.set_status, "idle", f"Ready · last: {secs:.1f}s in {elapsed:.2f}s")
+        else:
+            self.call_main(self.ui.set_status, "idle", f"Ready · last {secs:.1f}s: no speech recognised")
+
+
+EMPTY_CLIPS_KEEP = 5
+
+
+def _save_empty_clip(audio: np.ndarray):
+    """Keep the last few recordings that produced no text, so they can be listened to.
+    Stored next to the log; nothing leaves the machine."""
+    import wave
+
+    try:
+        folder = config.LOG_PATH.parent / "empty_clips"
+        folder.mkdir(exist_ok=True)
+        path = folder / time.strftime("%Y%m%d-%H%M%S.wav")
+        pcm = (np.clip(audio, -1, 1) * 32767).astype("<i2")
+        with wave.open(str(path), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(config.SAMPLE_RATE)
+            w.writeframes(pcm.tobytes())
+        for old in sorted(folder.glob("*.wav"))[:-EMPTY_CLIPS_KEEP]:
+            old.unlink()
+        log.info("No text; saved the audio to %s", path)
+    except Exception:
+        log.exception("Could not save the empty clip")
