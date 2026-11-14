@@ -1,15 +1,37 @@
 [project]
-name = "parakeet-demo"
-version = "0.1.0"
-description = "Add your description here"
+name = "parakeet-dictate"
+version = "0.2.0"
+description = "Hold a key, speak, release: local NVIDIA Parakeet TDT 0.6B v3 dictation into any app (macOS + Windows)"
 requires-python = ">=3.11"
 dependencies = [
-    "gradio>=6.32.0",
-    "parakeet-mlx>=0.7.0",
-    "pyobjc-framework-applicationservices>=13.0",
-    "pyobjc-framework-avfoundation>=13.0",
-    "pyobjc-framework-cocoa>=13.0",
-    "pyobjc-framework-quartz>=13.0",
-    "rumps>=0.4.0",
+    "numpy>=1.26",
     "sounddevice>=0.5.6",
+    # macOS: MLX inference (Apple Silicon) + native AppKit UI
+    "parakeet-mlx>=0.7.0; sys_platform == 'darwin'",
+    "pyobjc-framework-applicationservices>=13.0; sys_platform == 'darwin'",
+    "pyobjc-framework-avfoundation>=13.0; sys_platform == 'darwin'",
+    "pyobjc-framework-cocoa>=13.0; sys_platform == 'darwin'",
+    "pyobjc-framework-quartz>=13.0; sys_platform == 'darwin'",
+    "rumps>=0.4.0; sys_platform == 'darwin'",
+    # Windows: ONNX Runtime inference + Qt UI + low-level keyboard hook
+    "onnx-asr[cpu,hub]>=0.12; sys_platform == 'win32'",
+    "pyside6-essentials>=6.8; sys_platform == 'win32'",
+    "pynput>=1.8; sys_platform == 'win32'",
 ]
+
+[project.scripts]
+parakeet-dictate = "parakeet_dictate.__main__:main"
+
+[project.gui-scripts]
+parakeet-dictate-gui = "parakeet_dictate.__main__:main"   # no console window on Windows
+
+[dependency-groups]
+# Gradio web demo (demo_gradio.py, macOS/MLX only): uv sync --group demo
+demo = ["gradio>=6.32.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["parakeet_dictate"]
