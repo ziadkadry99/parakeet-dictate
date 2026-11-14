@@ -1,0 +1,15 @@
+[project]
+name = "parakeet-demo"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.11"
+dependencies = [
+    "gradio>=6.32.0",
+    "parakeet-mlx>=0.7.0",
+    "pyobjc-framework-applicationservices>=13.0",
+    "pyobjc-framework-avfoundation>=13.0",
+    "pyobjc-framework-cocoa>=13.0",
+    "pyobjc-framework-quartz>=13.0",
+    "rumps>=0.4.0",
+    "sounddevice>=0.5.6",
+]
