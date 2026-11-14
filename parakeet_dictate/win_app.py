@@ -15,12 +15,13 @@ import sys
 
 from pynput import keyboard
 from PySide6.QtCore import QMimeData, QObject, Qt, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QColor, QDesktopServices, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QDesktopServices, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 
-from . import config
+from . import config, win_autostart
 from .controller import Controller
 from .qt_overlay import Overlay
+from .recorder import list_input_devices, refresh_devices
 from .win_hotkey import RIGHT_CTRL, WinHotkey, is_typing_key
 
 log = logging.getLogger("dictate")
@@ -138,6 +139,10 @@ class TrayApp:
         self.last_action = QAction("Last: —", menu, triggered=self.copy_last)
         self.hotkey_action = QAction(self._hotkey_menu_title(), menu, triggered=self.rebind)
         reset_action = QAction("Reset Hotkey to Right Ctrl", menu, triggered=self.reset_hotkey)
+        self.autostart_action = QAction(
+            "Start with Windows", menu, checkable=True, checked=self._init_autostart(),
+            toggled=self._set_autostart,
+        )
         log_action = QAction("Open log folder", menu, triggered=self.open_log_folder)
         quit_action = QAction("Quit", menu, triggered=app.quit)
         menu.addAction(self.status_action)
@@ -145,7 +150,10 @@ class TrayApp:
         menu.addSeparator()
         menu.addAction(self.hotkey_action)
         menu.addAction(reset_action)
+        self.mic_menu = menu.addMenu("Microphone")
+        self.mic_menu.aboutToShow.connect(self._build_mic_menu)
         menu.addSeparator()
+        menu.addAction(self.autostart_action)
         menu.addAction(log_action)
         menu.addAction(quit_action)
         self.menu = menu
@@ -159,6 +167,8 @@ class TrayApp:
             ui=self, overlay=self.overlay, paste=self.paster.paste,
             call_main=self.main.call, hotkey_label=self.hotkey_spec["name"],
         )
+        self.ctl.recorder.device = config.load_settings().get("microphone")
+        log.info("Microphone: %s", self.ctl.recorder.device or "system default")
         self.hotkey = WinHotkey(self.hotkey_spec, self.ctl, self.main.call)
         self.hotkey.start()
         self.ctl.start()
@@ -249,6 +259,50 @@ class TrayApp:
         config.save_setting("hotkey", spec)
         self.hotkey_action.setText(self._hotkey_menu_title())
         log.info("Hotkey set to %s", spec)
+
+    # -- start with Windows (on by default)
+    def _init_autostart(self) -> bool:
+        want = config.load_settings().get("start_at_login", True)
+        try:
+            win_autostart.set_enabled(want)  # also refreshes the command if the project moved
+            if "start_at_login" not in config.load_settings():
+                config.save_setting("start_at_login", want)
+        except OSError:
+            log.exception("Could not update the Start with Windows entry")
+            return win_autostart.is_enabled()
+        return want
+
+    def _set_autostart(self, on: bool):
+        try:
+            win_autostart.set_enabled(on)
+            config.save_setting("start_at_login", on)
+        except OSError:
+            log.exception("Could not change Start with Windows")
+            self.tray.showMessage("Parakeet Dictate", "Couldn't change Start with Windows (see log).",
+                                  QSystemTrayIcon.MessageIcon.Warning, 5000)
+
+    # -- microphone choice
+    def _build_mic_menu(self):
+        m = self.mic_menu
+        m.clear()
+        if not self.ctl.holding:  # can't restart PortAudio mid-recording
+            refresh_devices()
+        current = self.ctl.recorder.device
+        group = QActionGroup(m)
+        names = list_input_devices()
+        entries = [("System default", None)] + [(n, n) for n in names]
+        if current is not None and current not in names:
+            entries.append((f"{current} (not connected)", current))
+        for label, value in entries:
+            a = QAction(label, m, checkable=True, checked=value == current)
+            a.triggered.connect(lambda _=False, v=value: self._set_mic(v))
+            group.addAction(a)
+            m.addAction(a)
+
+    def _set_mic(self, name):
+        self.ctl.recorder.device = name
+        config.save_setting("microphone", name)
+        log.info("Microphone set to %s", name or "system default")
 
     def open_log_folder(self):
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(config.LOG_PATH.parent)))

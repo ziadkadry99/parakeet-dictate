@@ -60,6 +60,10 @@ def _load_mlx():
 
 
 def _load_onnx():
+    import os
+
+    # Without Developer Mode Windows can't symlink; the HF cache copies files instead (fine).
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     import onnx_asr
     import onnxruntime as rt
 
